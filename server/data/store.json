@@ -1,0 +1,167 @@
+{
+  "version": 1,
+  "meta": {
+    "nextUserId": 4
+  },
+  "users": [
+    {
+      "id": "1",
+      "name": "Admin",
+      "email": "admin@yourdomain.com",
+      "passwordHash": "$2a$10$ksaw5UESQ6UzeOzoD.QlMuUD5zXnBvoHjHQipSs8587GC3WrS7DEO",
+      "role": "admin",
+      "createdAt": "2025-12-22T08:15:44.724Z"
+    },
+    {
+      "id": "2",
+      "name": "Voyage Admin",
+      "email": "admin@voyageai.uz",
+      "passwordHash": "$2a$10$qFfg.zFl7h41HG0XrodiAez.wq9pickSnJPLytDdm9JS.TOdz18PK",
+      "role": "admin",
+      "createdAt": "2025-12-23T07:25:44.543Z"
+    },
+    {
+      "id": "3",
+      "name": "Komiljonov Sultonboy",
+      "email": "komiljonovsultonboy954@gmail.com",
+      "passwordHash": "$2a$10$XQxDXQ1lbxGDr8dULYcCauxTVsqVQvpSrrywLNCrQbVEoNxrR6OZW",
+      "role": "user",
+      "createdAt": "2025-12-23T07:26:44.494Z"
+    }
+  ],
+  "refreshTokens": [
+    {
+      "tokenHash": "9572603d82a05726a8a3dae67d13aa6df502775e5fbd77fc54a9711749487a8c",
+      "userId": "1",
+      "createdAt": 1766396156606
+    },
+    {
+      "tokenHash": "27b5282e910f165afe493013217fa531e46e45372dc3390d42b105d3bf2fd720",
+      "userId": "3",
+      "createdAt": 1766488389528
+    },
+    {
+      "tokenHash": "611276de127a0aabafa49392c8fef6966df62985a7369c3bbbec959a0e8dbe4a",
+      "userId": "2",
+      "createdAt": 1766488627377
+    }
+  ],
+  "places": [],
+  "offers": [],
+  "events": [
+    {
+      "type": "login",
+      "meta": {
+        "userId": "1"
+      },
+      "ts": 1766396156606
+    },
+    {
+      "type": "plan_generated",
+      "meta": {
+        "userId": "1",
+        "city": "Samarkand"
+      },
+      "ts": 1766396187997
+    },
+    {
+      "type": "register",
+      "meta": {
+        "userId": "3"
+      },
+      "ts": 1766474804501
+    },
+    {
+      "type": "plan_generated",
+      "meta": {
+        "userId": "3",
+        "city": "Tashkent"
+      },
+      "ts": 1766474816607
+    },
+    {
+      "type": "plan_generated",
+      "meta": {
+        "userId": "3",
+        "city": "Tashkent"
+      },
+      "ts": 1766474816720
+    },
+    {
+      "type": "login",
+      "meta": {
+        "userId": "2"
+      },
+      "ts": 1766474870055
+    },
+    {
+      "type": "plan_generated",
+      "meta": {
+        "userId": "2",
+        "city": "Tashkent"
+      },
+      "ts": 1766475002610
+    },
+    {
+      "type": "plan_generated",
+      "meta": {
+        "userId": "2",
+        "city": "Tashkent"
+      },
+      "ts": 1766475003014
+    },
+    {
+      "type": "login",
+      "meta": {
+        "userId": "2"
+      },
+      "ts": 1766475022766
+    },
+    {
+      "type": "plan_generated",
+      "meta": {
+        "userId": "2",
+        "city": "Bukhara"
+      },
+      "ts": 1766475031235
+    },
+    {
+      "type": "plan_generated",
+      "meta": {
+        "userId": "2",
+        "city": "Bukhara"
+      },
+      "ts": 1766475031709
+    },
+    {
+      "type": "login",
+      "meta": {
+        "userId": "3"
+      },
+      "ts": 1766488389528
+    },
+    {
+      "type": "plan_generated",
+      "meta": {
+        "userId": "3",
+        "city": "Tashkent"
+      },
+      "ts": 1766488396228
+    },
+    {
+      "type": "plan_generated",
+      "meta": {
+        "userId": "3",
+        "city": "Tashkent"
+      },
+      "ts": 1766488396333
+    },
+    {
+      "type": "login",
+      "meta": {
+        "userId": "2"
+      },
+      "ts": 1766488627377
+    }
+  ]
+}
