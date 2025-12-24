@@ -9,9 +9,10 @@ const {
     addRefreshToken,
     revokeRefreshToken,
     isRefreshTokenActive,
+    updateUserProfile,
 } = require("../auth/store");
 const { signAccessToken, signRefreshToken, verifyRefreshToken } = require("../auth/tokens");
-const { validateRegister, validateLogin, validateRefresh } = require("../validators/auth");
+const { validateRegister, validateLogin, validateRefresh, validateProfileUpdate } = require("../validators/auth");
 const { requireAuth } = require("../auth/middleware");
 const { resolvePermissions } = require("../auth/permissions");
 const { trackEvent } = require("../analytics/metrics");
@@ -22,6 +23,7 @@ function serializeUser(user) {
         name: user.name,
         email: user.email,
         role: user.role,
+        avatar: user.avatar || null,
         permissions: resolvePermissions(user.role),
     };
 }
@@ -43,6 +45,7 @@ router.post(
             email: value.email,
             passwordHash,
             role: "user",
+            avatar: value.avatar,
         });
 
         const accessToken = signAccessToken(user);
@@ -121,5 +124,20 @@ router.post(
 router.get("/me", requireAuth, (req, res) => {
     res.json({ user: req.user });
 });
+
+// PATCH /api/auth/me
+router.patch(
+    "/me",
+    requireAuth,
+    asyncHandler(async (req, res, next) => {
+        const { ok, errors, value } = validateProfileUpdate(req.body);
+        if (!ok) return res.status(400).json({ message: "Validation failed", errors });
+
+        const updated = updateUserProfile(req.user.id, value);
+        if (!updated) return next(createError(404, "Account not found", "AUTH_INVALID"));
+
+        return res.json({ user: serializeUser(updated) });
+    })
+);
 
 module.exports = router;

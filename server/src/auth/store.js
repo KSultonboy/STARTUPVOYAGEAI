@@ -8,6 +8,7 @@ module.exports = {
     findUserByEmail: data.findUserByEmail,
     findUserById: data.findUserById,
     updateUserRole: data.updateUserRole,
+    updateUserProfile: data.updateUserProfile,
 
     // refresh tokens
     addRefreshToken: data.addRefreshToken,

@@ -1,0 +1,3 @@
+ssh root@64.23.244.120
+cd ~/apps/STARTUPVOYAGEAI
+./deploy.sh

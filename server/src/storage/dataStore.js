@@ -51,6 +51,27 @@ function seedState() {
     return state;
 }
 
+function mergeSeeds(state) {
+    let changed = false;
+    const placeIds = new Set(state.places.map((p) => p.id));
+    seedPlaces.forEach((place) => {
+        if (!placeIds.has(place.id)) {
+            state.places.push(clonePlace(place));
+            changed = true;
+        }
+    });
+
+    const offerIds = new Set(state.offers.map((o) => o.id));
+    seedOffers.forEach((offer) => {
+        if (!offerIds.has(offer.id)) {
+            state.offers.push(cloneOffer(offer));
+            changed = true;
+        }
+    });
+
+    return changed;
+}
+
 function normalizeState(data) {
     const state = emptyState();
     const source = data && typeof data === "object" ? data : {};
@@ -96,7 +117,11 @@ function loadState() {
     try {
         const raw = fs.readFileSync(DATA_PATH, "utf8");
         const parsed = JSON.parse(raw);
-        return normalizeState(parsed);
+        const normalized = normalizeState(parsed);
+        if (mergeSeeds(normalized)) {
+            writeState(normalized);
+        }
+        return normalized;
     } catch (err) {
         const backupPath = `${DATA_PATH}.corrupt.${Date.now()}`;
         try {
@@ -152,13 +177,14 @@ function listUsers() {
     return state.users.slice();
 }
 
-function createUser({ name, email, passwordHash, role = "user" }) {
+function createUser({ name, email, passwordHash, role = "user", avatar = null }) {
     const user = {
         id: String(state.meta.nextUserId++),
         name,
         email: normalizeEmail(email),
         passwordHash,
         role,
+        avatar: avatar || null,
         createdAt: new Date().toISOString(),
     };
     state.users.push(user);
@@ -179,6 +205,23 @@ function updateUserRole(id, role) {
     const user = findUserById(id);
     if (!user) return null;
     user.role = role;
+    scheduleSave();
+    return user;
+}
+
+function updateUserProfile(id, updates = {}) {
+    const user = findUserById(id);
+    if (!user) return null;
+
+    if (typeof updates.name === "string" && updates.name.trim()) {
+        user.name = updates.name.trim();
+    }
+    if (updates.avatar === null) {
+        user.avatar = null;
+    } else if (typeof updates.avatar === "string" && updates.avatar.trim()) {
+        user.avatar = updates.avatar.trim();
+    }
+    user.updatedAt = new Date().toISOString();
     scheduleSave();
     return user;
 }
@@ -341,6 +384,7 @@ module.exports = {
     findUserByEmail,
     findUserById,
     updateUserRole,
+    updateUserProfile,
 
     addRefreshToken,
     revokeRefreshToken,
