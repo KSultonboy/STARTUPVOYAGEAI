@@ -3,6 +3,15 @@ const PASSWORD_MIN = 6;
 const PASSWORD_MAX = 72;
 const AVATAR_MAX = 900000;
 
+// faqat data:image/...;base64,.... qabul qilamiz (yoki null)
+function isValidAvatarDataUri(v) {
+    if (v === null) return true;
+    if (typeof v !== "string") return false;
+    const s = v.trim();
+    if (!s) return true; // normalizeAvatar null qiladi
+    return /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(s);
+}
+
 function cleanString(value) {
     return typeof value === "string" ? value.trim() : "";
 }
@@ -23,14 +32,17 @@ function validateRegister(body = {}) {
 
     if (!name) errors.push({ field: "name", message: "Name is required" });
     if (!EMAIL_RE.test(email)) errors.push({ field: "email", message: "Valid email is required" });
+
     if (password.length < PASSWORD_MIN) {
         errors.push({ field: "password", message: `Password must be at least ${PASSWORD_MIN} characters` });
     }
     if (password.length > PASSWORD_MAX) {
         errors.push({ field: "password", message: "Password is too long" });
     }
-    if (avatar && avatar.length > AVATAR_MAX) {
-        errors.push({ field: "avatar", message: "Avatar image is too large" });
+
+    if (avatar) {
+        if (avatar.length > AVATAR_MAX) errors.push({ field: "avatar", message: "Avatar image is too large" });
+        if (!isValidAvatarDataUri(avatar)) errors.push({ field: "avatar", message: "Avatar must be a base64 image data URI" });
     }
 
     return {
@@ -58,7 +70,6 @@ function validateLogin(body = {}) {
 function validateRefresh(body = {}) {
     const errors = [];
     const refreshToken = typeof body.refreshToken === "string" ? body.refreshToken.trim() : "";
-
     if (!refreshToken) errors.push({ field: "refreshToken", message: "Refresh token is required" });
 
     return {
@@ -73,8 +84,9 @@ function validateProfileUpdate(body = {}) {
     const hasAvatar = Object.prototype.hasOwnProperty.call(body, "avatar");
     const avatar = hasAvatar ? normalizeAvatar(body.avatar) : undefined;
 
-    if (hasAvatar && avatar && avatar.length > AVATAR_MAX) {
-        errors.push({ field: "avatar", message: "Avatar image is too large" });
+    if (hasAvatar && avatar) {
+        if (avatar.length > AVATAR_MAX) errors.push({ field: "avatar", message: "Avatar image is too large" });
+        if (!isValidAvatarDataUri(avatar)) errors.push({ field: "avatar", message: "Avatar must be a base64 image data URI" });
     }
 
     return {

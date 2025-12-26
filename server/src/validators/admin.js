@@ -28,15 +28,20 @@ function normalizeTags(value) {
 
 function validatePlace(body = {}) {
     const errors = [];
+
     const name = cleanString(body.name);
+    const country = body.country === null ? null : cleanString(body.country) || null;
     const city = cleanString(body.city);
     const type = cleanString(body.type).toLowerCase();
     const short = cleanString(body.short);
+
     const priceTier = cleanString(body.priceTier).toLowerCase();
     const avgCost = parseNumber(body.avgCost);
     const rating = parseNumber(body.rating);
+
     const lat = parseNumber(body?.coords?.lat ?? body.lat);
     const lng = parseNumber(body?.coords?.lng ?? body.lng);
+
     const tags = normalizeTags(body.tags);
 
     if (!name) errors.push({ field: "name", message: "Name is required" });
@@ -53,6 +58,7 @@ function validatePlace(body = {}) {
         errors,
         value: {
             name,
+            country,
             city,
             type,
             short,
@@ -77,25 +83,15 @@ function validateOffer(body = {}) {
     if (!BUDGETS.includes(budget)) errors.push({ field: "budget", message: "Budget is invalid" });
     if (!description) errors.push({ field: "description", message: "Description is required" });
 
-    return {
-        ok: errors.length === 0,
-        errors,
-        value: { title, city, budget, description },
-    };
+    return { ok: errors.length === 0, errors, value: { title, city, budget, description } };
 }
 
 function validateRole(body = {}) {
     const errors = [];
     const role = cleanString(body.role).toLowerCase();
-    if (!["user", "admin"].includes(role)) {
-        errors.push({ field: "role", message: "Role must be user or admin" });
-    }
+    if (!["user", "admin"].includes(role)) errors.push({ field: "role", message: "Role must be user or admin" });
 
-    return {
-        ok: errors.length === 0,
-        errors,
-        value: { role },
-    };
+    return { ok: errors.length === 0, errors, value: { role } };
 }
 
 module.exports = { validatePlace, validateOffer, validateRole };

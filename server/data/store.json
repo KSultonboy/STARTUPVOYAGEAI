@@ -745,6 +745,8 @@
       "description": "Savitsky Museum ticket + local art gallery visit."
     }
   ],
+  "countries": [],
+  "cities": [],
   "events": [
     {
       "type": "login",

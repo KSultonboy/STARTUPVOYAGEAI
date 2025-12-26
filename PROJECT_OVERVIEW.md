@@ -1,13 +1,14 @@
 # VoyageAI Project Overview
 
-This document explains the current structure, behavior, and completed features for the VoyageAI repo.
+This document summarizes the current structure, behavior, and implemented features for the VoyageAI repo.
 
-## What the Project Does (Current Behavior)
-- Mobile app (Expo/React Native) with onboarding, auth, trip setup, trip generation, and tabs (plan/saved/offers/map/profile).
-- Trip plan generation is rule-based on the backend with budget tiers and interest scoring.
-- Admin panel inside the mobile app for analytics and managing places/offers/users (admin role only).
-- Backend (Express) provides auth, admin, places, offers, and trip plan APIs with JWT + refresh tokens.
-- Persistent storage uses a JSON file store so data survives server restarts.
+## Current Behavior
+- Mobile app (Expo/React Native) with onboarding, auth, trip setup, trip generation, and tab navigation (plan/saved/offers/map/profile).
+- Admin panel inside the mobile app for analytics and data management (places, offers, users, locations).
+- Backend (Express) provides auth (JWT + refresh), trip planning, locations, and admin routes.
+- Analytics events are tracked for register/login/plan generation and surfaced in admin overview/analytics.
+- Data persists in a JSON store so runtime data survives server restarts; seed data is merged on first run.
+- Profile includes avatar upload (base64) during sign up and can be updated later from the profile tab.
 
 ## File Structure (Key Parts)
 ```
@@ -25,6 +26,7 @@ voyage-ai/
         _layout.tsx
         index.tsx
         analytics.tsx
+        locations.tsx
         places.tsx
         offers.tsx
         users.tsx
@@ -81,6 +83,7 @@ voyage-ai/
       routes/
         admin.js
         auth.js
+        locations.js
         offers.js
         places.js
         plan.js
@@ -93,35 +96,38 @@ voyage-ai/
         admin.js
         auth.js
         plan.js
+
+  deployment
+  PROJECT_OVERVIEW.md
 ```
 
-## Completed Features
-- Mobile UI/UX:
-  - Modernized design system (colors/typography/spacing) and layout updates.
-  - Onboarding flow with improved visuals and safer layout handling.
-- Animations:
-  - Onboarding transitions, page enter animations, and card/loader micro-interactions.
-- Auth (Backend + Mobile):
-  - Register/Login with JWT access + refresh tokens.
-  - Password hashing with bcrypt.
-  - Roles/permissions and guarded admin routes.
-  - Validation and structured error handling.
-- Admin Panel (Mobile):
-  - Dashboard overview, analytics, places/offers CRUD, user role management.
-  - Burger menu navigation and admin-only access control.
-- Trip Planning:
-  - 3-tier budget logic (simple/comfort/luxury).
-  - Interest-based scoring and itinerary generation.
-- Analytics:
-  - Event tracking for register/login/plan generation with 14-day series.
-- Production Hardening (Server):
-  - CORS policy, helmet, compression, rate limits.
-  - Request IDs, logging, graceful shutdown, config validation.
-  - File-based data persistence to survive restarts.
+## Implemented Features (Current)
+- Mobile UI/UX: refreshed layout, consistent design system, and improved profile/offers/saved/map pages.
+- Animations: onboarding slide animations and generating page micro-interactions.
+- Auth: register/login, JWT access + refresh, bcrypt hashing, roles/permissions, validation, and error handling.
+- Trip planning: 3-tier budget logic with interest-based itinerary scoring.
+- Admin panel:
+  - Overview + analytics charts based on tracked events.
+  - CRUD for places and offers, user role updates.
+  - Locations management (countries and cities) with dynamic filters.
+- Locations:
+  - Admin routes for countries/cities.
+  - Public locations endpoints used by trip setup.
+  - Fallback: infer cities from places if no locations exist.
+- Server hardening: CORS, helmet, compression, rate limits, request IDs, graceful shutdown.
+
+## Deployment
+- Deployment commands are documented in `deployment`.
+```
+ssh root@64.23.244.120
+cd ~/apps/STARTUPVOYAGEAI
+./deploy.sh
+```
+- This repo includes the deployment instructions, but deployment status is not verified here. Re-run the script above to deploy updated backend changes.
 
 ## Environment Configuration
 Mobile (`mobile/.env`)
-- `EXPO_PUBLIC_API_URL` -> backend base URL (e.g. `http://<LAN-IP>:5000`)
+- `EXPO_PUBLIC_API_URL` -> backend base URL (example: `http://<LAN-IP>:5000` or production domain)
 
 Server (`server/.env`)
 - `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME`
@@ -133,4 +139,5 @@ Server (`server/.env`)
 
 ## Notes
 - Admin user is seeded at server startup using the `.env` values.
-- Current storage is JSON-file based; suitable for small-to-medium usage. For large scale, migrate to a real database.
+- Seed data for places/offers lives in `server/src/data/*` and is merged into the JSON store if missing.
+- `server/data/store.json` is the live data store; treat it as runtime state.

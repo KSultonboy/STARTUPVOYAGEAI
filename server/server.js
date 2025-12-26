@@ -8,6 +8,7 @@ const morgan = require("morgan");
 const rateLimit = require("express-rate-limit");
 
 const placesRoutes = require("./src/routes/places");
+const locationsRoutes = require("./src/routes/locations");
 const planRoutes = require("./src/routes/plan");
 const offersRoutes = require("./src/routes/offers");
 const authRoutes = require("./src/routes/auth");
@@ -34,14 +35,14 @@ app.use((req, res, next) => {
 
 morgan.token("id", (req) => req.id || "-");
 
-// ✅ CORS: mobile’da origin bo‘lmasligi mumkin => allow. Aks holda explicit reject.
+// ✅ CORS: mobile’da origin bo‘lmasligi mumkin => allow.
 app.use(
     cors({
         origin: (origin, callback) => {
             if (!origin) return callback(null, true);
             if (config.corsOrigins.includes("*")) return callback(null, true);
             if (config.corsOrigins.includes(origin)) return callback(null, true);
-            return callback(new Error("Not allowed by CORS"));
+            return callback(Object.assign(new Error("Not allowed by CORS"), { status: 403, code: "CORS_FORBIDDEN" }));
         },
         credentials: true,
     })
@@ -64,6 +65,7 @@ app.use(
     })
 );
 
+// auth limiter (extra)
 app.use(
     "/api/auth",
     rateLimit({
@@ -79,6 +81,7 @@ app.get("/health", (req, res) =>
 );
 
 app.use("/api/places", placesRoutes);
+app.use("/api/locations", locationsRoutes);
 app.use("/api/plan", planRoutes);
 app.use("/api/offers", offersRoutes);
 app.use("/api/auth", authRoutes);
@@ -94,11 +97,13 @@ app.use((req, res) => {
 
 app.use((err, req, res, next) => {
     const status = err.status || 500;
+
     if (!config.isProd) {
         console.error(`[error] ${req.id || "-"} ${err.stack || err.message || err}`);
     } else {
         console.error(`[error] ${req.id || "-"} ${status} ${err.message || "Server error"}`);
     }
+
     res.status(status).json({
         message: err.message || "Server error",
         code: err.code || "SERVER_ERROR",

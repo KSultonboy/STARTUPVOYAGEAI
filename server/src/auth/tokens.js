@@ -1,29 +1,41 @@
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 const { config } = require("../config");
 
-function mustGetSecret(value, name) {
+function getSecret(value, name) {
     const v = String(value || "").trim();
-    if (!v) throw new Error(`${name} is required`);
-    if (v.length < 16) throw new Error(`${name} must be at least 16 chars`);
-    return v;
+    if (v && v.length >= 16) return v;
+
+    // Production’da majburiy
+    if (config.isProd) {
+        throw new Error(`${name} is required and must be at least 16 chars`);
+    }
+
+    // Dev’da fallback (restartlarda ham bir xil bo‘lishi uchun deterministic)
+    const fallback = crypto
+        .createHash("sha256")
+        .update(`voyage-ai-dev:${name}:${process.cwd()}`)
+        .digest("hex");
+
+    console.warn(`[config] ${name} is missing/weak in development; using a dev fallback secret.`);
+    return fallback;
 }
 
-const ACCESS_SECRET = mustGetSecret(config.jwt.accessSecret, "JWT_SECRET");
-const REFRESH_SECRET = mustGetSecret(config.jwt.refreshSecret, "JWT_REFRESH_SECRET");
+const ACCESS_SECRET = getSecret(config.jwt.accessSecret, "JWT_SECRET");
+const REFRESH_SECRET = getSecret(config.jwt.refreshSecret, "JWT_REFRESH_SECRET");
 
 const ACCESS_TTL = config.jwt.accessTtl || "15m";
 const REFRESH_TTL = config.jwt.refreshTtl || "30d";
 
-// optional (recommended)
-const ISSUER = process.env.JWT_ISSUER || "voyage-ai";
-const AUDIENCE = process.env.JWT_AUDIENCE || "voyage-ai-mobile";
+const ISSUER = config.jwt.issuer || "voyage-ai";
+const AUDIENCE = config.jwt.audience || "voyage-ai-mobile";
 
 function signAccessToken(user) {
     return jwt.sign(
         { role: user.role },
         ACCESS_SECRET,
         {
-            subject: user.id,
+            subject: String(user.id),
             expiresIn: ACCESS_TTL,
             issuer: ISSUER,
             audience: AUDIENCE,
@@ -36,7 +48,7 @@ function signRefreshToken(user) {
         {},
         REFRESH_SECRET,
         {
-            subject: user.id,
+            subject: String(user.id),
             expiresIn: REFRESH_TTL,
             issuer: ISSUER,
             audience: AUDIENCE,

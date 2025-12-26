@@ -18,11 +18,10 @@ function requireAuth(req, res, next) {
     try {
         const payload = verifyAccessToken(token);
 
-        // payload.sub bizning tokens.js da subject bo‘ladi
-        const userId = payload.sub || payload.subject || payload.userId;
+        const userId = String(payload.sub || payload.subject || payload.userId || "");
         if (!userId) return next(createError(401, "Invalid token payload", "AUTH_INVALID"));
 
-        const user = findUserById(String(userId));
+        const user = findUserById(userId);
         if (!user) return next(createError(401, "Account not found", "AUTH_INVALID"));
 
         req.user = {
@@ -35,7 +34,7 @@ function requireAuth(req, res, next) {
         };
 
         return next();
-    } catch (err) {
+    } catch {
         return next(createError(401, "Invalid or expired token", "AUTH_INVALID"));
     }
 }
@@ -43,9 +42,7 @@ function requireAuth(req, res, next) {
 function requireRole(role) {
     return (req, res, next) => {
         if (!req.user) return next(createError(401, "Missing auth token", "AUTH_REQUIRED"));
-        if (req.user.role !== role) {
-            return next(createError(403, "Role not permitted", "FORBIDDEN"));
-        }
+        if (req.user.role !== role) return next(createError(403, "Role not permitted", "FORBIDDEN"));
         return next();
     };
 }

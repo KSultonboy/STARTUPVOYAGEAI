@@ -14,7 +14,12 @@ function resolveDataPath(value) {
 
 const DATA_PATH = resolveDataPath(process.env.DATA_PATH);
 const EVENT_RETENTION_DAYS = Number(process.env.EVENT_RETENTION_DAYS || 90);
-const STATE_VERSION = 1;
+
+// refresh token cleanup
+const REFRESH_TOKEN_RETENTION_DAYS = Number(process.env.REFRESH_TOKEN_RETENTION_DAYS || 60);
+const MAX_REFRESH_TOKENS_PER_USER = Number(process.env.MAX_REFRESH_TOKENS_PER_USER || 10);
+
+const STATE_VERSION = 2;
 
 function ensureDir() {
     fs.mkdirSync(path.dirname(DATA_PATH), { recursive: true });
@@ -37,9 +42,11 @@ function emptyState() {
         version: STATE_VERSION,
         meta: { nextUserId: 1 },
         users: [],
-        refreshTokens: [],
+        refreshTokens: [], // [{ tokenHash, userId, createdAt }]
         places: [],
         offers: [],
+        countries: [],
+        cities: [],
         events: [],
     };
 }
@@ -53,6 +60,7 @@ function seedState() {
 
 function mergeSeeds(state) {
     let changed = false;
+
     const placeIds = new Set(state.places.map((p) => p.id));
     seedPlaces.forEach((place) => {
         if (!placeIds.has(place.id)) {
@@ -77,17 +85,46 @@ function normalizeState(data) {
     const source = data && typeof data === "object" ? data : {};
 
     state.version = Number(source.version) || STATE_VERSION;
-    state.meta =
-        typeof source.meta === "object" && source.meta ? { ...state.meta, ...source.meta } : state.meta;
+    state.meta = typeof source.meta === "object" && source.meta ? { ...state.meta, ...source.meta } : state.meta;
 
     if (Array.isArray(source.users)) state.users = source.users;
-    if (Array.isArray(source.refreshTokens)) state.refreshTokens = source.refreshTokens;
     if (Array.isArray(source.places)) state.places = source.places;
     if (Array.isArray(source.offers)) state.offers = source.offers;
+    if (Array.isArray(source.countries)) state.countries = source.countries;
+    if (Array.isArray(source.cities)) state.cities = source.cities;
     if (Array.isArray(source.events)) state.events = source.events;
+
+    // refreshTokens migration: accept old formats
+    if (Array.isArray(source.refreshTokens)) {
+        state.refreshTokens = source.refreshTokens
+            .map((t) => {
+                if (!t) return null;
+
+                // if old stored raw token => convert to hash
+                if (typeof t === "string") {
+                    return { tokenHash: hashToken(t), userId: null, createdAt: Date.now() };
+                }
+
+                if (typeof t === "object") {
+                    const tokenHash = String(t.tokenHash || "").trim();
+                    const tokenRaw = String(t.token || "").trim();
+
+                    return {
+                        tokenHash: tokenHash || (tokenRaw ? hashToken(tokenRaw) : ""),
+                        userId: t.userId ? String(t.userId) : null,
+                        createdAt: Number(t.createdAt) || Date.now(),
+                    };
+                }
+
+                return null;
+            })
+            .filter((x) => x && x.tokenHash);
+    }
 
     if (!Array.isArray(source.places)) state.places = seedPlaces.map(clonePlace);
     if (!Array.isArray(source.offers)) state.offers = seedOffers.map(cloneOffer);
+    if (!Array.isArray(source.countries)) state.countries = [];
+    if (!Array.isArray(source.cities)) state.cities = [];
 
     if (!Number.isInteger(state.meta.nextUserId) || state.meta.nextUserId < 1) {
         const maxId = state.users.reduce((acc, user) => {
@@ -114,19 +151,20 @@ function loadState() {
         writeState(seeded);
         return seeded;
     }
+
     try {
         const raw = fs.readFileSync(DATA_PATH, "utf8");
         const parsed = JSON.parse(raw);
         const normalized = normalizeState(parsed);
-        if (mergeSeeds(normalized)) {
-            writeState(normalized);
-        }
+
+        pruneRefreshTokens(normalized);
+        pruneEvents(normalized);
+
+        if (mergeSeeds(normalized)) writeState(normalized);
         return normalized;
-    } catch (err) {
+    } catch {
         const backupPath = `${DATA_PATH}.corrupt.${Date.now()}`;
-        try {
-            fs.renameSync(DATA_PATH, backupPath);
-        } catch { }
+        try { fs.renameSync(DATA_PATH, backupPath); } catch { }
         const seeded = seedState();
         writeState(seeded);
         return seeded;
@@ -158,7 +196,7 @@ function makeId(prefix) {
 }
 
 function hashToken(token) {
-    return crypto.createHash("sha256").update(token).digest("hex");
+    return crypto.createHash("sha256").update(String(token || "")).digest("hex");
 }
 
 function normalizeEmail(value) {
@@ -172,10 +210,80 @@ function normalizeKey(value) {
         .replace(/\s+/g, "-");
 }
 
-// ---------------- Users ----------------
-function listUsers() {
-    return state.users.slice();
+function pruneEvents(st = state) {
+    if (!Number.isFinite(EVENT_RETENTION_DAYS) || EVENT_RETENTION_DAYS <= 0) return;
+    const cutoff = Date.now() - EVENT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    st.events = (st.events || []).filter((e) => e && Number(e.ts) >= cutoff);
 }
+
+function pruneRefreshTokens(st = state) {
+    if (!Number.isFinite(REFRESH_TOKEN_RETENTION_DAYS) || REFRESH_TOKEN_RETENTION_DAYS <= 0) return;
+    const cutoff = Date.now() - REFRESH_TOKEN_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+
+    st.refreshTokens = (st.refreshTokens || [])
+        .filter((t) => t && t.tokenHash)
+        .filter((t) => Number(t.createdAt) >= cutoff);
+
+    // cap per user
+    if (Number.isFinite(MAX_REFRESH_TOKENS_PER_USER) && MAX_REFRESH_TOKENS_PER_USER > 0) {
+        const byUser = new Map();
+        for (const t of st.refreshTokens) {
+            const k = String(t.userId || "null");
+            if (!byUser.has(k)) byUser.set(k, []);
+            byUser.get(k).push(t);
+        }
+        const next = [];
+        for (const arr of byUser.values()) {
+            arr.sort((a, b) => Number(b.createdAt) - Number(a.createdAt));
+            next.push(...arr.slice(0, MAX_REFRESH_TOKENS_PER_USER));
+        }
+        st.refreshTokens = next;
+    }
+}
+
+// ---------------- Locations ----------------
+function listCountries() { return state.countries.slice(); }
+function findCountryById(id) { return state.countries.find((c) => c.id === id) || null; }
+function findCountryByName(name) {
+    const key = normalizeKey(name);
+    return state.countries.find((c) => normalizeKey(c.name) === key) || null;
+}
+function createCountry({ name }) {
+    const country = { id: makeId("country"), name: String(name || "").trim(), createdAt: new Date().toISOString() };
+    state.countries.push(country);
+    scheduleSave();
+    return country;
+}
+function deleteCountry(id) {
+    const idx = state.countries.findIndex((c) => c.id === id);
+    if (idx === -1) return null;
+    const removed = state.countries.splice(idx, 1)[0];
+    state.cities = state.cities.filter((c) => c.countryId !== id);
+    scheduleSave();
+    return removed;
+}
+function listCities() { return state.cities.slice(); }
+function findCityById(id) { return state.cities.find((c) => c.id === id) || null; }
+function findCityByName(name, countryId) {
+    const key = normalizeKey(name);
+    return state.cities.find((c) => normalizeKey(c.name) === key && (countryId ? c.countryId === countryId : true)) || null;
+}
+function createCity({ name, countryId }) {
+    const city = { id: makeId("city"), name: String(name || "").trim(), countryId, createdAt: new Date().toISOString() };
+    state.cities.push(city);
+    scheduleSave();
+    return city;
+}
+function deleteCity(id) {
+    const idx = state.cities.findIndex((c) => c.id === id);
+    if (idx === -1) return null;
+    const removed = state.cities.splice(idx, 1)[0];
+    scheduleSave();
+    return removed;
+}
+
+// ---------------- Users ----------------
+function listUsers() { return state.users.slice(); }
 
 function createUser({ name, email, passwordHash, role = "user", avatar = null }) {
     const user = {
@@ -196,10 +304,7 @@ function findUserByEmail(email) {
     const normalized = normalizeEmail(email);
     return state.users.find((u) => u.email === normalized) || null;
 }
-
-function findUserById(id) {
-    return state.users.find((u) => u.id === id) || null;
-}
+function findUserById(id) { return state.users.find((u) => u.id === id) || null; }
 
 function updateUserRole(id, role) {
     const user = findUserById(id);
@@ -213,68 +318,64 @@ function updateUserProfile(id, updates = {}) {
     const user = findUserById(id);
     if (!user) return null;
 
-    if (typeof updates.name === "string" && updates.name.trim()) {
-        user.name = updates.name.trim();
-    }
-    if (updates.avatar === null) {
-        user.avatar = null;
-    } else if (typeof updates.avatar === "string" && updates.avatar.trim()) {
-        user.avatar = updates.avatar.trim();
-    }
+    if (typeof updates.name === "string" && updates.name.trim()) user.name = updates.name.trim();
+
+    if (updates.avatar === null) user.avatar = null;
+    else if (typeof updates.avatar === "string" && updates.avatar.trim()) user.avatar = updates.avatar.trim();
+
     user.updatedAt = new Date().toISOString();
     scheduleSave();
     return user;
 }
 
-// ---------------- Refresh tokens ----------------
-function addRefreshToken(token, userId) {
+// ---------------- Refresh tokens (tokenHash ONLY) ----------------
+// addRefreshToken(tokenHash, userId)
+function addRefreshToken(tokenHash, userId) {
+    const th = String(tokenHash || "").trim();
+    if (!th) return;
+
+    pruneRefreshTokens(state);
+
     state.refreshTokens.push({
-        tokenHash: hashToken(token),
-        userId,
+        tokenHash: th,
+        userId: String(userId),
         createdAt: Date.now(),
     });
     scheduleSave();
 }
 
-function revokeRefreshToken(token) {
-    const tokenHash = hashToken(token);
-    const next = state.refreshTokens.filter((t) => t.tokenHash !== tokenHash);
+function revokeRefreshToken(tokenHash) {
+    const th = String(tokenHash || "").trim();
+    if (!th) return;
+
+    const next = state.refreshTokens.filter((t) => t.tokenHash !== th);
     if (next.length !== state.refreshTokens.length) {
         state.refreshTokens = next;
         scheduleSave();
     }
 }
 
-function isRefreshTokenActive(token, userId) {
-    const tokenHash = hashToken(token);
-    return state.refreshTokens.some((t) => t.tokenHash === tokenHash && t.userId === userId);
+function isRefreshTokenActive(tokenHash, userId) {
+    const th = String(tokenHash || "").trim();
+    if (!th) return false;
+    return state.refreshTokens.some((t) => t.tokenHash === th && String(t.userId) === String(userId));
 }
 
 // ---------------- Places ----------------
-function listPlaces() {
-    return state.places.slice();
-}
+function listPlaces() { return state.places.slice(); }
+function findPlaceById(id) { return state.places.find((p) => p.id === id) || null; }
 
-function findPlaceById(id) {
-    return state.places.find((p) => p.id === id) || null;
-}
-
-// ✅ NEW: id OR slug OR name orqali topish
 function findPlaceByKey(key) {
     const raw = String(key || "").trim();
     if (!raw) return null;
 
-    // 1) exact id
     const byId = state.places.find((p) => p.id === raw);
     if (byId) return byId;
 
     const nk = normalizeKey(raw);
-
-    // 2) slug field bo‘lsa
     const bySlug = state.places.find((p) => normalizeKey(p.slug) === nk);
     if (bySlug) return bySlug;
 
-    // 3) name bo‘yicha
     const byName = state.places.find((p) => normalizeKey(p.name) === nk);
     if (byName) return byName;
 
@@ -283,12 +384,7 @@ function findPlaceByKey(key) {
 
 function createPlace(data) {
     const place = { id: makeId("place"), ...data };
-
-    // optional: slug bo‘lmasa auto slug
-    if (!place.slug && place.name) {
-        place.slug = normalizeKey(place.name);
-    }
-
+    if (!place.slug && place.name) place.slug = normalizeKey(place.name);
     state.places.unshift(place);
     scheduleSave();
     return place;
@@ -299,8 +395,6 @@ function updatePlace(id, data) {
     if (idx === -1) return null;
 
     const merged = { ...state.places[idx], ...data, id };
-
-    // optional: name o‘zgarsa slug ham yangilansin (slug user bergan bo‘lsa tegmaymiz)
     if (!merged.slug && merged.name) merged.slug = normalizeKey(merged.name);
 
     state.places[idx] = merged;
@@ -316,7 +410,6 @@ function deletePlace(id) {
     return removed;
 }
 
-// ✅ NEW: id/slug/name bilan delete
 function deletePlaceByKey(key) {
     const place = findPlaceByKey(key);
     if (!place) return null;
@@ -324,13 +417,8 @@ function deletePlaceByKey(key) {
 }
 
 // ---------------- Offers ----------------
-function listOffers() {
-    return state.offers.slice();
-}
-
-function findOfferById(id) {
-    return state.offers.find((o) => o.id === id) || null;
-}
+function listOffers() { return state.offers.slice(); }
+function findOfferById(id) { return state.offers.find((o) => o.id === id) || null; }
 
 function createOffer(data) {
     const offer = { id: makeId("offer"), ...data };
@@ -356,18 +444,9 @@ function deleteOffer(id) {
 }
 
 // ---------------- Analytics events ----------------
-function pruneEvents() {
-    if (!Number.isFinite(EVENT_RETENTION_DAYS) || EVENT_RETENTION_DAYS <= 0) return;
-    const cutoff = Date.now() - EVENT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
-    const next = state.events.filter((e) => e.ts >= cutoff);
-    if (next.length !== state.events.length) {
-        state.events = next;
-    }
-}
-
 function trackEvent(type, meta) {
     state.events.push({ type, meta: meta || null, ts: Date.now() });
-    pruneEvents();
+    pruneEvents(state);
     scheduleSave();
 }
 
@@ -378,6 +457,7 @@ function listEvents() {
 module.exports = {
     DATA_PATH,
     flush,
+    hashToken, // IMPORTANT: auth/store uses this for refresh tokens now
 
     listUsers,
     createUser,
@@ -403,6 +483,17 @@ module.exports = {
     createOffer,
     updateOffer,
     deleteOffer,
+
+    listCountries,
+    findCountryById,
+    findCountryByName,
+    createCountry,
+    deleteCountry,
+    listCities,
+    findCityById,
+    findCityByName,
+    createCity,
+    deleteCity,
 
     trackEvent,
     listEvents,

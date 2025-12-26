@@ -12,10 +12,19 @@ const {
     updateUserProfile,
 } = require("../auth/store");
 const { signAccessToken, signRefreshToken, verifyRefreshToken } = require("../auth/tokens");
-const { validateRegister, validateLogin, validateRefresh, validateProfileUpdate } = require("../validators/auth");
+const {
+    validateRegister,
+    validateLogin,
+    validateRefresh,
+    validateProfileUpdate,
+} = require("../validators/auth");
 const { requireAuth } = require("../auth/middleware");
 const { resolvePermissions } = require("../auth/permissions");
 const { trackEvent } = require("../analytics/metrics");
+
+function normalizeEmail(value) {
+    return String(value || "").trim().toLowerCase();
+}
 
 function serializeUser(user) {
     return {
@@ -35,25 +44,32 @@ router.post(
         const { ok, errors, value } = validateRegister(req.body);
         if (!ok) return res.status(400).json({ message: "Validation failed", errors });
 
-        if (findUserByEmail(value.email)) {
+        const email = normalizeEmail(value.email);
+
+        if (findUserByEmail(email)) {
             return next(createError(409, "Email already registered", "AUTH_EXISTS"));
         }
 
-        const passwordHash = await bcrypt.hash(value.password, 10);
+        const passwordHash = await bcrypt.hash(String(value.password), 10);
         const user = createUser({
-            name: value.name,
-            email: value.email,
+            name: String(value.name || "").trim(),
+            email,
             passwordHash,
             role: "user",
-            avatar: value.avatar,
+            avatar: value.avatar || null,
         });
 
         const accessToken = signAccessToken(user);
         const refreshToken = signRefreshToken(user);
         addRefreshToken(refreshToken, user.id);
+
         trackEvent("register", { userId: user.id });
 
-        return res.status(201).json({ user: serializeUser(user), accessToken, refreshToken });
+        return res.status(201).json({
+            user: serializeUser(user),
+            accessToken,
+            refreshToken,
+        });
     })
 );
 
@@ -64,15 +80,18 @@ router.post(
         const { ok, errors, value } = validateLogin(req.body);
         if (!ok) return res.status(400).json({ message: "Validation failed", errors });
 
-        const user = findUserByEmail(value.email);
+        const email = normalizeEmail(value.email);
+
+        const user = findUserByEmail(email);
         if (!user) return next(createError(401, "Invalid credentials", "AUTH_INVALID"));
 
-        const match = await bcrypt.compare(value.password, user.passwordHash);
+        const match = await bcrypt.compare(String(value.password), String(user.passwordHash));
         if (!match) return next(createError(401, "Invalid credentials", "AUTH_INVALID"));
 
         const accessToken = signAccessToken(user);
         const refreshToken = signRefreshToken(user);
         addRefreshToken(refreshToken, user.id);
+
         trackEvent("login", { userId: user.id });
 
         return res.json({ user: serializeUser(user), accessToken, refreshToken });
@@ -89,23 +108,32 @@ router.post(
         let payload;
         try {
             payload = verifyRefreshToken(value.refreshToken);
-        } catch (err) {
+        } catch {
             return next(createError(401, "Invalid refresh token", "AUTH_INVALID"));
         }
 
-        if (!isRefreshTokenActive(value.refreshToken, payload.sub)) {
+        const userId = String(payload.sub || "");
+        if (!userId) return next(createError(401, "Invalid refresh token", "AUTH_INVALID"));
+
+        if (!isRefreshTokenActive(value.refreshToken, userId)) {
             return next(createError(401, "Refresh token revoked", "AUTH_INVALID"));
         }
 
-        const user = findUserById(payload.sub);
+        const user = findUserById(userId);
         if (!user) return next(createError(401, "Account not found", "AUTH_INVALID"));
 
+        // rotate
         revokeRefreshToken(value.refreshToken);
+
         const accessToken = signAccessToken(user);
         const refreshToken = signRefreshToken(user);
         addRefreshToken(refreshToken, user.id);
 
-        return res.json({ accessToken, refreshToken });
+        return res.json({
+            accessToken,
+            refreshToken,
+            user: serializeUser(user), // client ignore qilsa ham bo‘ladi
+        });
     })
 );
 
@@ -125,19 +153,19 @@ router.get("/me", requireAuth, (req, res) => {
     res.json({ user: req.user });
 });
 
-// PATCH /api/auth/me
-router.patch(
-    "/me",
-    requireAuth,
-    asyncHandler(async (req, res, next) => {
-        const { ok, errors, value } = validateProfileUpdate(req.body);
-        if (!ok) return res.status(400).json({ message: "Validation failed", errors });
+// PATCH/PUT/POST /api/auth/me
+const handleProfileUpdate = asyncHandler(async (req, res, next) => {
+    const { ok, errors, value } = validateProfileUpdate(req.body);
+    if (!ok) return res.status(400).json({ message: "Validation failed", errors });
 
-        const updated = updateUserProfile(req.user.id, value);
-        if (!updated) return next(createError(404, "Account not found", "AUTH_INVALID"));
+    const updated = updateUserProfile(req.user.id, value);
+    if (!updated) return next(createError(404, "Account not found", "AUTH_INVALID"));
 
-        return res.json({ user: serializeUser(updated) });
-    })
-);
+    return res.json({ user: serializeUser(updated) });
+});
+
+router.patch("/me", requireAuth, handleProfileUpdate);
+router.put("/me", requireAuth, handleProfileUpdate);
+router.post("/me", requireAuth, handleProfileUpdate); // legacy fallback
 
 module.exports = router;

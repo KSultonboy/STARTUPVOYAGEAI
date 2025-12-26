@@ -48,6 +48,8 @@ const config = {
         refreshSecret: process.env.JWT_REFRESH_SECRET || "",
         accessTtl: process.env.JWT_ACCESS_TTL || "15m",
         refreshTtl: process.env.JWT_REFRESH_TTL || "30d",
+        issuer: process.env.JWT_ISSUER || "voyage-ai",
+        audience: process.env.JWT_AUDIENCE || "voyage-ai-mobile",
     },
 };
 
@@ -70,16 +72,15 @@ function assertProductionConfig() {
     const errors = [];
 
     if (isWeakSecret(config.jwt.accessSecret)) {
-        errors.push("JWT_SECRET must be a strong, unique secret.");
+        errors.push("JWT_SECRET must be a strong, unique secret (>=16 chars).");
     }
     if (isWeakSecret(config.jwt.refreshSecret)) {
-        errors.push("JWT_REFRESH_SECRET must be a strong, unique secret.");
+        errors.push("JWT_REFRESH_SECRET must be a strong, unique secret (>=16 chars).");
     }
     if (config.corsOrigins.includes("*")) {
         errors.push("CORS_ORIGIN must be set to explicit origins in production.");
     }
 
-    // ✅ admin env required in production (admin seed uchun)
     if (isEmpty(process.env.ADMIN_EMAIL)) errors.push("ADMIN_EMAIL is required in production.");
     if (isEmpty(process.env.ADMIN_PASSWORD)) errors.push("ADMIN_PASSWORD is required in production.");
     if (isEmpty(process.env.ADMIN_NAME)) errors.push("ADMIN_NAME is required in production.");

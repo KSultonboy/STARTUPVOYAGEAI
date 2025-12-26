@@ -1,7 +1,8 @@
-function createError(status, message, code) {
+function createError(status = 500, message = "Server error", code = "SERVER_ERROR", details) {
     const err = new Error(message);
     err.status = status;
-    if (code) err.code = code;
+    err.code = code;
+    if (details !== undefined) err.details = details;
     return err;
 }
 

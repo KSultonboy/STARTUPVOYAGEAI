@@ -1,24 +1,38 @@
+// server/src/routes/admin.js
 const router = require("express").Router();
 const { asyncHandler } = require("../utils/asyncHandler");
 const { createError } = require("../utils/errors");
 
 const { requireAuth, requireRole } = require("../auth/middleware");
+
 const {
     listUsers,
     updateUserRole,
+
     listPlaces,
     createPlace,
     updatePlace,
     deletePlaceByKey,
+
     listOffers,
     createOffer,
     updateOffer,
     deleteOffer,
-} = require("../auth/store");
+
+    listCountries,
+    listCities,
+    findCountryById,
+    findCountryByName,
+    createCountry,
+    deleteCountry,
+    findCityByName,
+    createCity,
+    deleteCity,
+} = require("../storage/dataStore");
 
 const { getOverview } = require("../analytics/metrics");
+const { validatePlace, validateOffer, validateRole } = require("../validators/admin");
 
-// ✅ Admin guard
 const adminOnly = [requireAuth, requireRole("admin")];
 
 // GET /api/admin/overview
@@ -26,14 +40,11 @@ router.get(
     "/overview",
     ...adminOnly,
     asyncHandler(async (req, res) => {
-        const overview = getOverview();
-        res.json(overview);
+        res.json(getOverview());
     })
 );
 
 // -------- Places --------
-
-// GET /api/admin/places
 router.get(
     "/places",
     ...adminOnly,
@@ -42,34 +53,30 @@ router.get(
     })
 );
 
-// POST /api/admin/places
 router.post(
     "/places",
     ...adminOnly,
     asyncHandler(async (req, res) => {
-        // Minimal server-side validation (sizda validators/admin.js bo‘lsa, o‘shani ishlatsangiz ham bo‘ladi)
-        const b = req.body || {};
-        if (!b.name || !b.city || !b.type) {
-            throw createError(400, "Missing required fields", "VALIDATION");
-        }
-        const created = createPlace(b);
+        const { ok, errors, value } = validatePlace(req.body || {});
+        if (!ok) return res.status(400).json({ message: "Validation failed", errors });
+        const created = createPlace(value);
         res.status(201).json(created);
     })
 );
 
-// PUT /api/admin/places/:id
 router.put(
     "/places/:id",
     ...adminOnly,
     asyncHandler(async (req, res, next) => {
-        const updated = updatePlace(req.params.id, req.body || {});
+        const { ok, errors, value } = validatePlace(req.body || {});
+        if (!ok) return res.status(400).json({ message: "Validation failed", errors });
+
+        const updated = updatePlace(req.params.id, value);
         if (!updated) return next(createError(404, "Place not found", "NOT_FOUND"));
         res.json(updated);
     })
 );
 
-// DELETE /api/admin/places/:id
-// ✅ BU YERDA endi id/slug/name ham ishlaydi
 router.delete(
     "/places/:id",
     ...adminOnly,
@@ -81,8 +88,6 @@ router.delete(
 );
 
 // -------- Offers --------
-
-// GET /api/admin/offers
 router.get(
     "/offers",
     ...adminOnly,
@@ -91,32 +96,30 @@ router.get(
     })
 );
 
-// POST /api/admin/offers
 router.post(
     "/offers",
     ...adminOnly,
     asyncHandler(async (req, res) => {
-        const b = req.body || {};
-        if (!b.title || !b.city || !b.budget) {
-            throw createError(400, "Missing required fields", "VALIDATION");
-        }
-        const created = createOffer(b);
+        const { ok, errors, value } = validateOffer(req.body || {});
+        if (!ok) return res.status(400).json({ message: "Validation failed", errors });
+        const created = createOffer(value);
         res.status(201).json(created);
     })
 );
 
-// PUT /api/admin/offers/:id
 router.put(
     "/offers/:id",
     ...adminOnly,
     asyncHandler(async (req, res, next) => {
-        const updated = updateOffer(req.params.id, req.body || {});
+        const { ok, errors, value } = validateOffer(req.body || {});
+        if (!ok) return res.status(400).json({ message: "Validation failed", errors });
+
+        const updated = updateOffer(req.params.id, value);
         if (!updated) return next(createError(404, "Offer not found", "NOT_FOUND"));
         res.json(updated);
     })
 );
 
-// DELETE /api/admin/offers/:id
 router.delete(
     "/offers/:id",
     ...adminOnly,
@@ -128,8 +131,6 @@ router.delete(
 );
 
 // -------- Users --------
-
-// GET /api/admin/users
 router.get(
     "/users",
     ...adminOnly,
@@ -145,16 +146,14 @@ router.get(
     })
 );
 
-// PATCH /api/admin/users/:id  { role: "admin" | "user" }
 router.patch(
     "/users/:id",
     ...adminOnly,
     asyncHandler(async (req, res, next) => {
-        const role = String(req.body?.role || "").trim();
-        if (role !== "admin" && role !== "user") {
-            return next(createError(400, "Invalid role", "VALIDATION"));
-        }
-        const updated = updateUserRole(req.params.id, role);
+        const { ok, errors, value } = validateRole(req.body || {});
+        if (!ok) return res.status(400).json({ message: "Validation failed", errors });
+
+        const updated = updateUserRole(req.params.id, value.role);
         if (!updated) return next(createError(404, "User not found", "NOT_FOUND"));
 
         res.json({
@@ -164,6 +163,97 @@ router.patch(
             role: updated.role,
             createdAt: updated.createdAt,
         });
+    })
+);
+
+// -------- Locations --------
+router.get(
+    "/locations/countries",
+    ...adminOnly,
+    asyncHandler(async (req, res) => {
+        res.json(listCountries());
+    })
+);
+
+router.post(
+    "/locations/countries",
+    ...adminOnly,
+    asyncHandler(async (req, res, next) => {
+        const name = String(req.body?.name || "").trim();
+        if (!name) return next(createError(400, "Country name is required", "VALIDATION"));
+        if (findCountryByName(name)) return next(createError(409, "Country already exists", "ALREADY_EXISTS"));
+        const created = createCountry({ name });
+        res.status(201).json(created);
+    })
+);
+
+router.delete(
+    "/locations/countries/:id",
+    ...adminOnly,
+    asyncHandler(async (req, res, next) => {
+        const removed = deleteCountry(req.params.id);
+        if (!removed) return next(createError(404, "Country not found", "NOT_FOUND"));
+        res.json({ ok: true });
+    })
+);
+
+router.get(
+    "/locations/cities",
+    ...adminOnly,
+    asyncHandler(async (req, res) => {
+        const countryId = typeof req.query.countryId === "string" ? req.query.countryId : null;
+        const countries = listCountries();
+        const countryMap = new Map(countries.map((c) => [c.id, c]));
+
+        let cities = listCities();
+        if (countryId) cities = cities.filter((c) => c.countryId === countryId);
+
+        const result = cities.map((c) => ({
+            id: c.id,
+            name: c.name,
+            countryId: c.countryId,
+            country: countryMap.get(c.countryId)?.name || null,
+        }));
+
+        res.json(result);
+    })
+);
+
+router.post(
+    "/locations/cities",
+    ...adminOnly,
+    asyncHandler(async (req, res, next) => {
+        const name = String(req.body?.name || "").trim();
+        const countryId = String(req.body?.countryId || "").trim();
+
+        if (!name || !countryId) {
+            return next(createError(400, "City name and countryId are required", "VALIDATION"));
+        }
+
+        const country = findCountryById(countryId);
+        if (!country) return next(createError(404, "Country not found", "NOT_FOUND"));
+
+        if (findCityByName(name, countryId)) {
+            return next(createError(409, "City already exists", "ALREADY_EXISTS"));
+        }
+
+        const created = createCity({ name, countryId });
+        res.status(201).json({
+            id: created.id,
+            name: created.name,
+            countryId: created.countryId,
+            country: country.name,
+        });
+    })
+);
+
+router.delete(
+    "/locations/cities/:id",
+    ...adminOnly,
+    asyncHandler(async (req, res, next) => {
+        const removed = deleteCity(req.params.id);
+        if (!removed) return next(createError(404, "City not found", "NOT_FOUND"));
+        res.json({ ok: true });
     })
 );
 

@@ -1,8 +1,7 @@
-const { trackEvent, listEvents } = require("../storage/dataStore");
+const { trackEvent, listEvents, listUsers, listPlaces, listOffers } = require("../storage/dataStore");
 
 function countEvents(type) {
-    const events = listEvents();
-    return events.filter((e) => e.type === type).length;
+    return listEvents().reduce((acc, e) => (e.type === type ? acc + 1 : acc), 0);
 }
 
 function getDateKey(date) {
@@ -15,24 +14,52 @@ function getDateKey(date) {
 function getSeries(type, days = 14) {
     const now = new Date();
     const buckets = [];
-    const counts = [];
-    const events = listEvents();
+    const index = new Map();
+    const counts = new Array(days).fill(0);
 
     for (let i = days - 1; i >= 0; i -= 1) {
         const d = new Date(now);
         d.setDate(now.getDate() - i);
-        buckets.push(getDateKey(d));
-        counts.push(0);
+        const key = getDateKey(d);
+        index.set(key, buckets.length);
+        buckets.push(key);
     }
 
-    events.forEach((event) => {
-        if (event.type !== type) return;
+    for (const event of listEvents()) {
+        if (event.type !== type) continue;
         const key = getDateKey(new Date(event.ts));
-        const idx = buckets.indexOf(key);
-        if (idx >= 0) counts[idx] += 1;
-    });
+        const idx = index.get(key);
+        if (idx !== undefined) counts[idx] += 1;
+    }
 
     return { days: buckets, counts };
 }
 
-module.exports = { trackEvent, countEvents, getSeries };
+function getOverview(days = 14) {
+    const signups = countEvents("register");
+    const logins = countEvents("login");
+    const plansGenerated = countEvents("plan_generated");
+
+    const signupSeries = getSeries("register", days);
+    const loginSeries = getSeries("login", days);
+    const planSeries = getSeries("plan_generated", days);
+
+    return {
+        totals: {
+            users: listUsers().length,
+            places: listPlaces().length,
+            offers: listOffers().length,
+            signups,
+            logins,
+            plansGenerated,
+        },
+        series: {
+            days: signupSeries.days,
+            signups: signupSeries.counts,
+            logins: loginSeries.counts,
+            plans: planSeries.counts,
+        },
+    };
+}
+
+module.exports = { trackEvent, countEvents, getSeries, getOverview };
