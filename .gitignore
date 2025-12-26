@@ -1,3 +1,4 @@
 # runtime data
 server/data/store.json
 server/data/*.json
+server/data/store.json
